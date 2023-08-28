@@ -1,0 +1,132 @@
+''' this code was run on Google colab '''
+
+from google.colab import drive
+from gensim.models import Word2Vec
+import os
+
+drive.mount('/content/drive')
+
+os.chdir("/content/drive/My Drive/Colab Notebooks/Oh My News")
+!ls
+
+from gensim.models import Word2Vec
+from gensim.models.callbacks import CallbackAny2Vec
+from tqdm import tqdm
+
+corpus_fname = 'ohmynews_combined.txt'
+model_fname = 'w2v_model'
+
+class callback(CallbackAny2Vec):
+    """Callback to print loss after each epoch."""
+
+    def __init__(self):
+        self.epoch = 0
+        self.loss_to_be_subed = 0
+
+    def on_epoch_end(self, model):
+        loss = model.get_latest_training_loss()
+        loss_now = loss - self.loss_to_be_subed
+        self.loss_to_be_subed = loss
+        print('Loss after epoch {}: {}'.format(self.epoch, loss_now))
+        self.epoch += 1
+
+
+print('corpus 생성')
+corpus = [sent.strip().split(" ") for sent in tqdm(open(corpus_fname, 'r', encoding='utf-8').readlines())]
+
+print("학습 중")
+model = Word2Vec(corpus, size=100, workers=4, sg=1, compute_loss=True, iter=5, callbacks=[callback()])
+model.wv.save_word2vec_format(model_fname)
+print('완료')
+
+from gensim.models import KeyedVectors
+
+
+# 모델을 로딩하여 가장 유사한 단어를 출력
+loaded_model = KeyedVectors.load_word2vec_format('w2v_model') # 모델 로드
+print(loaded_model.wv.vectors.shape)
+
+#print(loaded_model.wv.most_similar('기회', topn=5))
+
+#엑셀파일에서 의미있는 단어들 manual하게 선택하여 다른 Sheet으로 이동. 아래 코드에서 읽혀야 함.
+import pandas as pd
+
+vocab=pd.read_excel('ohmy_word_freq.xlsx', sheet_name='combined')
+vocab_list=vocab['word of interest'].to_list()
+len(vocab_list)
+
+target_vocab=[]
+close_vocab=[]
+for v in vocab_list:
+  target_vocab.append(v)
+  close_vocab.append(loaded_model.wv.most_similar(v, topn=20))
+
+#len(close_vocab)
+#len(target_vocab)
+#close_vocab[1][1][0] #word
+#close_vocab[0][1] #distance
+words=[]
+for i in range(0,369): # 단어리스트 수에 따라 range 조정할 것
+  for j in range(0,20):
+    words.append(close_vocab[i][j]) 
+
+target=[]
+for k in target_vocab:
+  target.append(k*20)
+
+target=[item for item in target_vocab for i in range(20)]
+
+#len(words)
+#words[1:5]
+
+f=pd.DataFrame(list(zip(target,words)), columns=['target','close'])
+f.to_excel('words and frequency_combined.xlsx')
+
+#Oh My News 정치면과 사회면 나눠서 분석
+import pandas as pd
+words=['민주당','이재명','문재인','힘','윤석열','김건희', '자유', '분배', '공정', '혁신', '기회', '민주', '시장', '복지', '노동자']
+freq_word=[]
+freq_freq=[]
+n=len(words)
+
+for word in words:
+  r=loaded_model.wv.most_similar(word, topn=100)
+  for i in range(0,n):
+    freq_word.append(r[i][0])
+    freq_freq.append(r[i][1])
+    d={'word': freq_word, 'freq':freq_freq}
+    df=pd.DataFrame(d)
+    df.to_excel(r'OhMy_distances_'+ word + '.xlsx')
+
+#loaded_model.wv.most_similar("윤석열", topn=10)[1][0]
+r[0]
+
+from itertools import combinations
+import pandas as pd
+words=['민주당','이재명','문재인','힘','윤석열','김건희', '자유', '분배', '공정', '혁신', '기회', '민주', '시장', '복지', '노동자']
+
+pairs=list(combinations(words,2))
+#print(pairs)
+first=[]
+second=[]
+for i in range(0,len(words)):
+  first.append(pairs[i][0])
+  second.append(pairs[i][1])
+
+d={'first':first, 'second':second}
+df=pd.DataFrame(d)
+#df.size
+print(df)
+
+import pandas as pd
+#f=pd.read_excel('words interest.xlsx')
+
+sim=[]
+for index, row in df.iterrows():
+  val=loaded_model.wv.similarity(row['first'], row['second'])
+  sim.append(val)
+  
+#print(sim)                   
+df['Similarity_Word2Vec']=(sim)
+df.to_excel('OhMy_semantics_pairwise_Word2Vec.xlsx')
+print(df)
